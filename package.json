@@ -1,0 +1,15 @@
+{
+  "name": "libtommath-c",
+  "version": "0.42.0",
+  "description": "libtommath's c source bundled and published in npm",
+  "scripts": {
+    "test": "make test && ./test",
+    "postinstall": "make"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/quartzjer/libtommath-c.git"
+  },
+  "author": "https://github.com/libtom",
+  "homepage": "https://github.com/libtom/libtommath"
+}
