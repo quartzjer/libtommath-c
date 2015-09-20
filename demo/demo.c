@@ -61,10 +61,23 @@ int lbit(void)
    }
 }
 
+#if defined(LTM_DEMO_REAL_RAND) && !defined(_WIN32)
+static FILE* fd_urandom;
+#endif
 int myrng(unsigned char *dst, int len, void *dat)
 {
    int x;
    (void)dat;
+#if defined(LTM_DEMO_REAL_RAND)
+   if (!fd_urandom) {
+#if !defined(_WIN32)
+      fprintf(stderr, "\nno /dev/urandom\n");
+#endif
+   }
+   else {
+      return fread(dst, 1, len, fd_urandom);
+   }
+#endif
    for (x = 0; x < len; x++)
       dst[x] = rand() & 0xFF;
    return len;
@@ -83,6 +96,12 @@ mp_int a, b, c, d, e, f;
 static void _cleanup(void)
 {
   mp_clear_multi(&a, &b, &c, &d, &e, &f, NULL);
+  printf("\n");
+
+#ifdef LTM_DEMO_REAL_RAND
+  if(fd_urandom)
+     fclose(fd_urandom);
+#endif
 }
 
 char cmd[4096], buf[4096];
@@ -95,7 +114,8 @@ int main(void)
       gcd_n, lcm_n, inv_n, div2_n, mul2_n, add_d_n, sub_d_n;
    char* ret;
 #else
-   unsigned long t;
+   unsigned long s, t;
+   unsigned long long q, r;
    mp_digit mp;
    int i, n, err;
 #endif
@@ -105,6 +125,16 @@ int main(void)
 
    atexit(_cleanup);
 
+#if defined(LTM_DEMO_REAL_RAND)
+   if (!fd_urandom) {
+      fd_urandom = fopen("/dev/urandom", "r");
+      if (!fd_urandom) {
+#if !defined(_WIN32)
+         fprintf(stderr, "\ncould not open /dev/urandom\n");
+#endif
+      }
+   }
+#endif
    srand(LTM_DEMO_RAND_SEED);
 
 #ifdef MP_8BIT
@@ -179,6 +209,47 @@ printf("compare no compare!\n"); return EXIT_FAILURE; }
       printf("\nmp_get_int() bad result!");
       return EXIT_FAILURE;
    }
+
+   printf("\n\nTesting: mp_get_long\n");
+   for (i = 0; i < (int)(sizeof(unsigned long)*CHAR_BIT) - 1; ++i) {
+      t = (1ULL << (i+1)) - 1;
+      if (!t)
+         t = -1;
+      printf(" t = 0x%lx i = %d\r", t, i);
+      do {
+         if (mp_set_long(&a, t) != MP_OKAY) {
+            printf("\nmp_set_long() error!");
+            return EXIT_FAILURE;
+         }
+         s = mp_get_long(&a);
+         if (s != t) {
+            printf("\nmp_get_long() bad result! 0x%lx != 0x%lx", s, t);
+            return EXIT_FAILURE;
+         }
+         t <<= 1;
+      } while(t);
+   }
+
+   printf("\n\nTesting: mp_get_long_long\n");
+   for (i = 0; i < (int)(sizeof(unsigned long)*CHAR_BIT) - 1; ++i) {
+      r = (1ULL << (i+1)) - 1;
+      if (!r)
+         r = -1;
+      printf(" r = 0x%llx i = %d\r", r, i);
+      do {
+         if (mp_set_long_long(&a, r) != MP_OKAY) {
+            printf("\nmp_set_long_long() error!");
+            return EXIT_FAILURE;
+         }
+         q = mp_get_long_long(&a);
+         if (q != r) {
+            printf("\nmp_get_long_long() bad result! 0x%llx != 0x%llx", q, r);
+            return EXIT_FAILURE;
+         }
+         r <<= 1;
+      } while(r);
+   }
+
    // test mp_sqrt
    printf("\n\nTesting: mp_sqrt\n");
    for (i = 0; i < 1000; ++i) {

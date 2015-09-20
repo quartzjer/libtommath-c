@@ -63,12 +63,14 @@ extern "C" {
 #ifdef MP_8BIT
    typedef unsigned char      mp_digit;
    typedef unsigned short     mp_word;
+#define MP_SIZEOF_MP_DIGIT 1
 #ifdef DIGIT_BIT
 #error You must not define DIGIT_BIT when using MP_8BIT
 #endif
 #elif defined(MP_16BIT)
    typedef unsigned short     mp_digit;
    typedef unsigned int       mp_word;
+#define MP_SIZEOF_MP_DIGIT 2
 #ifdef DIGIT_BIT
 #error You must not define DIGIT_BIT when using MP_16BIT
 #endif
@@ -130,12 +132,23 @@ extern "C" {
 
 /* otherwise the bits per digit is calculated automatically from the size of a mp_digit */
 #ifndef DIGIT_BIT
-   #define DIGIT_BIT     ((int)((CHAR_BIT * sizeof(mp_digit) - 1)))  /* bits per digit */
+   #define DIGIT_BIT     (((CHAR_BIT * MP_SIZEOF_MP_DIGIT) - 1))  /* bits per digit */
    typedef unsigned long mp_min_u32;
 #else
    typedef mp_digit mp_min_u32;
 #endif
 
+/* platforms that can use a better rand function */
+#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+    #define MP_USE_ALT_RAND 1
+#endif
+
+/* use arc4random on platforms that support it */
+#ifdef MP_USE_ALT_RAND
+    #define MP_GEN_RANDOM()    arc4random()
+#else
+    #define MP_GEN_RANDOM()    rand()
+#endif
 
 #define MP_DIGIT_BIT     DIGIT_BIT
 #define MP_MASK          ((((mp_digit)1)<<((mp_digit)DIGIT_BIT))-((mp_digit)1))
@@ -242,8 +255,20 @@ void mp_set(mp_int *a, mp_digit b);
 /* set a 32-bit const */
 int mp_set_int(mp_int *a, unsigned long b);
 
+/* set a platform dependent unsigned long value */
+int mp_set_long(mp_int *a, unsigned long b);
+
+/* set a platform dependent unsigned long long value */
+int mp_set_long_long(mp_int *a, unsigned long long b);
+
 /* get a 32-bit value */
 unsigned long mp_get_int(mp_int * a);
+
+/* get a platform dependent unsigned long value */
+unsigned long mp_get_long(mp_int * a);
+
+/* get a platform dependent unsigned long long value */
+unsigned long long mp_get_long_long(mp_int * a);
 
 /* initialize and set a digit */
 int mp_init_set (mp_int * a, mp_digit b);
@@ -589,6 +614,40 @@ int s_mp_exptmod (mp_int * G, mp_int * X, mp_int * P, mp_int * Y, int mode);
 void bn_reverse(unsigned char *s, int len);
 
 extern const char *mp_s_rmap;
+
+/* Fancy macro to set an MPI from another type.
+ * There are several things assumed:
+ *  x is the counter and unsigned
+ *  a is the pointer to the MPI
+ *  b is the original value that should be set in the MPI.
+ */
+#define MP_SET_XLONG(func_name, type)                    \
+int func_name (mp_int * a, type b)                       \
+{                                                        \
+  unsigned int  x;                                       \
+  int           res;                                     \
+                                                         \
+  mp_zero (a);                                           \
+                                                         \
+  /* set four bits at a time */                          \
+  for (x = 0; x < sizeof(type) * 2; x++) {               \
+    /* shift the number up four bits */                  \
+    if ((res = mp_mul_2d (a, 4, a)) != MP_OKAY) {        \
+      return res;                                        \
+    }                                                    \
+                                                         \
+    /* OR in the top four bits of the source */          \
+    a->dp[0] |= (b >> ((sizeof(type)) * 8 - 4)) & 15;    \
+                                                         \
+    /* shift the source up to the next four bits */      \
+    b <<= 4;                                             \
+                                                         \
+    /* ensure that digits are not clamped off */         \
+    a->used += 1;                                        \
+  }                                                      \
+  mp_clamp (a);                                          \
+  return MP_OKAY;                                        \
+}
 
 #ifdef __cplusplus
    }
